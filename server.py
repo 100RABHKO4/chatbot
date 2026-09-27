@@ -286,8 +286,14 @@ def make_handler(app: VeraApp) -> type[BaseHTTPRequestHandler]:
 _TOO_LARGE = object()
 
 
+class _Server(ThreadingHTTPServer):
+    # Default listen backlog is 5; the judge sends up to 10 req/s, and a full
+    # backlog costs a ~1s SYN retry on the client side.
+    request_queue_size = 128
+
+
 def create_server(host: str = "0.0.0.0", port: int = 8080, app: Optional[VeraApp] = None) -> ThreadingHTTPServer:
-    server = ThreadingHTTPServer((host, port), make_handler(app or VeraApp()))
+    server = _Server((host, port), make_handler(app or VeraApp()))
     server.daemon_threads = True
     return server
 

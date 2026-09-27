@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Optional, Union
 
-from composer import Composed, Plan, compose, humanize_service
+from composer import Composed, Plan, _grounding, compose, humanize_service
 from signals import (Evidence, Fact, MerchantView, best_peer_fact, customer_gate, customer_view, first_sentence,
                      delta_fact, digest_item, fmt_date, fmt_money, fmt_num, fmt_pct, humanize, is_num,
                      merchant_gate, merchant_view, metric_fact, offer_fact, parse_iso, seasonal_beat,
@@ -626,6 +626,10 @@ class VeraEngine:
             self.opted_out_customers: set[str] = set()
             self.snoozed_until: dict[str, datetime] = {}
             self.last_decisions: list[dict] = []
+            # Reply-side state (reply.py): per-merchant counters and reply de-duplication.
+            self.merchant_state: dict[str, dict] = {}
+            self.last_conversation_by_merchant: dict[str, str] = {}
+            self.reply_cache: dict[tuple, dict] = {}
 
     # ------------------------------------------------------------- tick
     def tick(self, request: dict, store: ContextStore) -> dict:
@@ -694,9 +698,9 @@ class VeraEngine:
 
     # ------------------------------------------------------------ reply
     def reply(self, request: dict, store: ContextStore) -> dict:
-        # Conversation state machine lands in the next stage.
-        return {"action": "wait", "wait_seconds": 1800,
-                "rationale": "Reply engine not implemented yet; holding without sending."}
+        from reply import handle_reply  # local import: reply.py depends on this module
+        with self._lock:
+            return handle_reply(self, request, store)
 
     # ---------------------------------------------------------- helpers
     @staticmethod
@@ -716,8 +720,16 @@ class VeraEngine:
         self.conversations[conversation_id] = {
             "merchant_id": plan.mv.merchant_id, "customer_id": customer_id, "trigger_id": plan.trigger_id,
             "kind": plan.kind, "family": plan.family, "action": plan.action, "send_as": plan.send_as,
-            "bodies": [composed.body], "status": "open",
+            "bodies": [composed.body], "status": "open", "turns": [{"from": "vera", "body": composed.body}],
+            "proposal": {
+                "action": plan.action, "family": plan.family, "kind": plan.kind, "mode": plan.mode,
+                "deliverable": plan.pack.deliverable(plan.action), "reason": plan.reason,
+                "facts": {k: f.text for k, f in plan.evidence.facts.items()},
+                "grounding": _grounding(plan), "cta": plan.cta_type,
+                "slots": [f.text for k, f in sorted(plan.evidence.facts.items()) if k.startswith("slot_")],
+            },
         }
+        self.last_conversation_by_merchant[plan.mv.merchant_id] = conversation_id
         return {
             "conversation_id": conversation_id,
             "merchant_id": plan.mv.merchant_id,
