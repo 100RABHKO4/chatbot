@@ -8,8 +8,8 @@ Design:
   * ``VeraApp`` holds all behaviour and is callable without HTTP (tests use it).
   * ``make_handler`` adapts it to ``http.server``; the HTTP layer only parses,
     routes and serialises.
-  * Decision-making lives behind the ``Engine`` interface. Until the decision
-    layer exists, ``NullEngine`` answers safely (no sends, wait on replies).
+  * Decision-making lives behind the ``Engine`` interface: ``decision.VeraEngine``
+    by default; ``NullEngine`` is a no-op stand-in for tests.
   * tick/reply never return an error status: a malformed request or an engine
     failure still yields a valid, conservative JSON answer, because the judge
     scores those endpoints and penalises malformed output.
@@ -29,6 +29,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Optional, Protocol
 
+from decision import VeraEngine
 from state import SCOPES, ContextStore, utc_now_iso
 
 log = logging.getLogger("vera.server")
@@ -69,7 +70,7 @@ class NullEngine:
 class VeraApp:
     def __init__(self, engine: Optional[Engine] = None, store: Optional[ContextStore] = None) -> None:
         self.store = store or ContextStore()
-        self.engine: Engine = engine or NullEngine()
+        self.engine: Engine = engine or VeraEngine()
         self.started = time.monotonic()
 
     # ---------------------------------------------------------------- GET

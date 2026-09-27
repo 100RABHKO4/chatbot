@@ -157,6 +157,20 @@ class Validator:
         self.facts = FactBank.from_contexts(category, merchant, trigger, customer, extra=extra_facts)
         self.taboos = _category_taboos(category)
 
+    @classmethod
+    def scoped(cls, grounding: Iterable[Any], category: Optional[dict] = None,
+               extra_taboos: Iterable[str] = ()) -> "Validator":
+        """Validator whose fact bank holds ONLY the evidence chosen for one decision.
+
+        This is the production path: coincidental numbers elsewhere in the
+        contexts (dates, minutes, unrelated stats) can no longer ground a
+        fabricated figure.
+        """
+        validator = cls(category=category)
+        validator.facts = FactBank.from_contexts(extra=grounding)
+        validator.taboos = sorted(set(validator.taboos) | {_norm(t) for t in extra_taboos if t})
+        return validator
+
     def register(self, *values: Any) -> None:
         """Allow derived values the composer computed (e.g. 12 calls -> 6 calls)."""
         for value in values:
