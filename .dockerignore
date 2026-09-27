@@ -1,0 +1,6 @@
+.git
+tests
+dataset
+examples
+*.md
+__pycache__
